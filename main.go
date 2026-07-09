@@ -1,8 +1,10 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -100,7 +102,7 @@ func cmdInit(args []string) {
 	}
 
 	debugLog("Initializing repository at: %s", path)
-	
+
 	_, err := git.PlainInit(path, false)
 	if err != nil {
 		fmt.Printf("Error initializing repository: %v\n", err)
@@ -113,17 +115,18 @@ func cmdInit(args []string) {
 
 func cmdClone(args []string) {
 	debugLog("Starting clone command")
-	
+
 	cloneFlag := flag.NewFlagSet("clone", flag.ExitOnError)
 	branch := cloneFlag.String("b", "", "Branch to checkout")
 	depth := cloneFlag.Int("depth", 0, "Create a shallow clone with a history truncated to the specified number of commits")
 	force := cloneFlag.Bool("f", false, "Force overwrite existing directory")
 	sshKey := cloneFlag.String("ssh-key", "", "Path to SSH private key (default: ~/.ssh/id_rsa)")
+	insecure := cloneFlag.Bool("k", false, "Skip SSL certificate verification (insecure)")
 	cloneFlag.Parse(args[1:])
 
 	flagArgs := cloneFlag.Args()
 	if len(flagArgs) < 1 {
-		fmt.Println("Usage: gitGo clone [-b branch] [--depth depth] [-f] [--ssh-key path] <url> [path]")
+		fmt.Println("Usage: gitGo clone [-b branch] [--depth depth] [-f] [-k] [--ssh-key path] <url> [path]")
 		os.Exit(1)
 	}
 
@@ -144,9 +147,9 @@ func cmdClone(args []string) {
 	debugLog("Depth: %d", *depth)
 	debugLog("Force: %v", *force)
 	debugLog("SSH Key: %s", *sshKey)
-	
+
 	fmt.Printf("Cloning into %s...\n", path)
-	
+
 	info, err := os.Stat(path)
 	if err == nil {
 		debugLog("Path exists, checking type")
@@ -176,7 +179,7 @@ func cmdClone(args []string) {
 	} else {
 		debugLog("Path does not exist, will create new directory")
 	}
-	
+
 	debugLog("Creating CloneOptions")
 	cloneOpts := &git.CloneOptions{
 		URL:               url,
@@ -184,7 +187,18 @@ func cmdClone(args []string) {
 		SingleBranch:      false,
 		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth,
 	}
-	
+
+	if *insecure && strings.HasPrefix(url, "https://") {
+		debugLog("Insecure mode enabled, skipping SSL verification")
+		cloneOpts.Transport = &githttp.Client{
+			Client: &http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				},
+			},
+		}
+	}
+
 	if strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://") {
 		debugLog("Detected SSH URL, setting up authentication")
 		keyPath := *sshKey
@@ -197,14 +211,14 @@ func cmdClone(args []string) {
 			keyPath = filepath.Join(home, ".ssh", "id_rsa")
 			debugLog("Using default SSH key path: %s", keyPath)
 		}
-		
+
 		_, err := os.Stat(keyPath)
 		if err != nil {
 			fmt.Printf("Error: SSH key not found at %s\n", keyPath)
 			fmt.Println("Please provide SSH key path with --ssh-key flag")
 			os.Exit(1)
 		}
-		
+
 		publicKeys, err := ssh.NewPublicKeysFromFile("git", keyPath, "")
 		if err != nil {
 			debugLog("Error creating SSH public keys: %v", err)
@@ -213,7 +227,7 @@ func cmdClone(args []string) {
 		}
 		cloneOpts.Auth = publicKeys
 	}
-	
+
 	if *branch != "" {
 		debugLog("Setting branch reference: %s", *branch)
 		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(*branch)
@@ -223,15 +237,15 @@ func cmdClone(args []string) {
 		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName("main")
 		cloneOpts.SingleBranch = true
 	}
-	
+
 	if *depth > 0 {
 		debugLog("Setting clone depth: %d", *depth)
 		cloneOpts.Depth = *depth
 	}
-	
+
 	debugLog("Calling PlainClone with branch: %s", cloneOpts.ReferenceName)
 	_, err = git.PlainClone(path, false, cloneOpts)
-	
+
 	if err != nil && *branch == "" {
 		debugLog("Clone failed with main branch, trying master")
 		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName("master")
@@ -289,15 +303,15 @@ func extractRepoName(url string) string {
 	if len(url) == 0 {
 		return "repo"
 	}
-	
+
 	if idx := len(url) - 1; idx >= 0 && url[idx] == '/' {
 		url = url[:idx]
 	}
-	
+
 	if idx := len(url) - 1; idx >= 0 && url[idx] == '\\' {
 		url = url[:idx]
 	}
-	
+
 	for i := len(url) - 1; i >= 0; i-- {
 		if url[i] == '/' || url[i] == '\\' {
 			name := url[i+1:]
@@ -307,7 +321,7 @@ func extractRepoName(url string) string {
 			return name
 		}
 	}
-	
+
 	if len(url) > 4 && url[len(url)-4:] == ".git" {
 		return url[:len(url)-4]
 	}
@@ -318,7 +332,7 @@ func cmdStatus(args []string) {
 	debugLog("Starting status command")
 	wd, _ := os.Getwd()
 	debugLog("Current directory: %s", wd)
-	
+
 	repo, err := git.PlainOpen(".")
 	if err != nil {
 		debugLog("Error opening repository: %v", err)
@@ -355,11 +369,11 @@ func cmdStatus(args []string) {
 
 func cmdPull(args []string) {
 	debugLog("Starting pull command")
-	
+
 	pullFlag := flag.NewFlagSet("pull", flag.ExitOnError)
 	force := pullFlag.Bool("f", false, "Force pull and discard local changes")
 	pullFlag.Parse(args[1:])
-	
+
 	repo, err := git.PlainOpen(".")
 	if err != nil {
 		debugLog("Error opening repository: %v", err)
@@ -420,7 +434,7 @@ func cmdPull(args []string) {
 
 func cmdAdd(args []string) {
 	debugLog("Starting add command")
-	
+
 	files := args[1:]
 	if len(files) == 0 {
 		files = []string{"."}
@@ -459,7 +473,7 @@ func cmdAdd(args []string) {
 
 func cmdCommit(args []string) {
 	debugLog("Starting commit command")
-	
+
 	commitFlag := flag.NewFlagSet("commit", flag.ExitOnError)
 	message := commitFlag.String("m", "", "Commit message")
 	commitFlag.Parse(args[1:])
@@ -514,7 +528,7 @@ func cmdCommit(args []string) {
 
 func cmdLog(args []string) {
 	debugLog("Starting log command")
-	
+
 	repo, err := git.PlainOpen(".")
 	if err != nil {
 		debugLog("Error opening repository: %v", err)
@@ -555,7 +569,7 @@ func cmdLog(args []string) {
 
 func cmdRemote(args []string) {
 	debugLog("Starting remote command")
-	
+
 	if len(args) < 2 {
 		fmt.Println("Usage: gitGo remote add <name> <url>")
 		os.Exit(1)
