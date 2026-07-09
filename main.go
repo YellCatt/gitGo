@@ -4,13 +4,16 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
 
 var globalVerbose bool
@@ -58,6 +61,12 @@ func main() {
 		cmdRemote(args)
 	case "pull":
 		cmdPull(args)
+	case "checkout":
+		cmdCheckout(args)
+	case "branch":
+		cmdBranch(args)
+	case "test":
+		cmdTest(args)
 	default:
 		fmt.Printf("Unknown command: %s\n", args[0])
 		printUsage()
@@ -71,10 +80,13 @@ func printUsage() {
 	fmt.Println("  gitGo init [path]          Initialize a new git repository")
 	fmt.Println("  gitGo clone <url> [path]   Clone a remote repository")
 	fmt.Println("  gitGo pull                 Pull changes from remote")
+	fmt.Println("  gitGo checkout <branch>    Checkout a branch")
+	fmt.Println("  gitGo branch               List all branches")
 	fmt.Println("  gitGo status               Show working tree status")
 	fmt.Println("  gitGo add [files...]       Add files to staging area")
 	fmt.Println("  gitGo commit -m <message>  Commit changes")
 	fmt.Println("  gitGo log                  Show commit history")
+	fmt.Println("  gitGo test                 Run Go tests")
 	fmt.Println("  gitGo remote add <name> <url>  Add remote repository")
 }
 
@@ -103,11 +115,12 @@ func cmdClone(args []string) {
 	branch := cloneFlag.String("b", "", "Branch to checkout")
 	depth := cloneFlag.Int("depth", 0, "Create a shallow clone with a history truncated to the specified number of commits")
 	force := cloneFlag.Bool("f", false, "Force overwrite existing directory")
+	sshKey := cloneFlag.String("ssh-key", "", "Path to SSH private key (default: ~/.ssh/id_rsa)")
 	cloneFlag.Parse(args[1:])
 
 	flagArgs := cloneFlag.Args()
 	if len(flagArgs) < 1 {
-		fmt.Println("Usage: gitGo clone [-b branch] [--depth depth] [-f] <url> [path]")
+		fmt.Println("Usage: gitGo clone [-b branch] [--depth depth] [-f] [--ssh-key path] <url> [path]")
 		os.Exit(1)
 	}
 
@@ -127,6 +140,7 @@ func cmdClone(args []string) {
 	debugLog("Branch: %s", *branch)
 	debugLog("Depth: %d", *depth)
 	debugLog("Force: %v", *force)
+	debugLog("SSH Key: %s", *sshKey)
 	
 	fmt.Printf("Cloning into %s...\n", path)
 	
@@ -166,6 +180,35 @@ func cmdClone(args []string) {
 		Progress:          os.Stdout,
 		SingleBranch:      false,
 		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth,
+	}
+	
+	if strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://") {
+		debugLog("Detected SSH URL, setting up authentication")
+		keyPath := *sshKey
+		if keyPath == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				fmt.Printf("Error getting home directory: %v\n", err)
+				os.Exit(1)
+			}
+			keyPath = filepath.Join(home, ".ssh", "id_rsa")
+			debugLog("Using default SSH key path: %s", keyPath)
+		}
+		
+		_, err := os.Stat(keyPath)
+		if err != nil {
+			fmt.Printf("Error: SSH key not found at %s\n", keyPath)
+			fmt.Println("Please provide SSH key path with --ssh-key flag")
+			os.Exit(1)
+		}
+		
+		publicKeys, err := ssh.NewPublicKeysFromFile("git", keyPath, "")
+		if err != nil {
+			debugLog("Error creating SSH public keys: %v", err)
+			fmt.Printf("Error loading SSH key: %v\n", err)
+			os.Exit(1)
+		}
+		cloneOpts.Auth = publicKeys
 	}
 	
 	if *branch != "" {
@@ -512,4 +555,142 @@ func cmdRemote(args []string) {
 		fmt.Printf("Unknown remote subcommand: %s\n", args[1])
 		os.Exit(1)
 	}
+}
+
+func cmdCheckout(args []string) {
+	debugLog("Starting checkout command")
+
+	if len(args) < 2 {
+		fmt.Println("Usage: gitGo checkout <branch>")
+		os.Exit(1)
+	}
+
+	branch := args[1]
+	debugLog("Checkout branch: %s", branch)
+
+	repo, err := git.PlainOpen(".")
+	if err != nil {
+		debugLog("Error opening repository: %v", err)
+		fmt.Printf("Error opening repository: %v\n", err)
+		os.Exit(1)
+	}
+	debugLog("Repository opened successfully")
+
+	w, err := repo.Worktree()
+	if err != nil {
+		debugLog("Error getting worktree: %v", err)
+		fmt.Printf("Error getting worktree: %v\n", err)
+		os.Exit(1)
+	}
+	debugLog("Worktree retrieved successfully")
+
+	debugLog("Checking out branch: %s", branch)
+	err = w.Checkout(&git.CheckoutOptions{
+		Branch: plumbing.NewBranchReferenceName(branch),
+	})
+
+	if err != nil {
+		debugLog("Error checking out: %v", err)
+		fmt.Printf("Error checking out branch: %v\n", err)
+		fmt.Println("")
+		fmt.Println("Possible solutions:")
+		fmt.Println("1. Make sure the branch exists")
+		fmt.Println("2. Commit or stash your changes before checkout")
+		os.Exit(1)
+	}
+
+	debugLog("Checkout completed successfully")
+	fmt.Printf("Switched to branch '%s'\n", branch)
+}
+
+func cmdBranch(args []string) {
+	debugLog("Starting branch command")
+
+	repo, err := git.PlainOpen(".")
+	if err != nil {
+		debugLog("Error opening repository: %v", err)
+		fmt.Printf("Error opening repository: %v\n", err)
+		os.Exit(1)
+	}
+	debugLog("Repository opened successfully")
+
+	refs, err := repo.References()
+	if err != nil {
+		debugLog("Error getting references: %v", err)
+		fmt.Printf("Error getting references: %v\n", err)
+		os.Exit(1)
+	}
+	debugLog("References retrieved successfully")
+
+	headRef, err := repo.Head()
+	if err != nil {
+		debugLog("Error getting HEAD: %v", err)
+		fmt.Printf("Error getting HEAD: %v\n", err)
+		os.Exit(1)
+	}
+	currentBranch := headRef.Name().Short()
+	debugLog("Current branch: %s", currentBranch)
+
+	fmt.Println("Local branches:")
+	err = refs.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Name().IsBranch() {
+			branchName := ref.Name().Short()
+			if branchName == currentBranch {
+				fmt.Printf("* %s\n", branchName)
+			} else {
+				fmt.Printf("  %s\n", branchName)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		debugLog("Error iterating references: %v", err)
+		fmt.Printf("Error iterating references: %v\n", err)
+		os.Exit(1)
+	}
+	debugLog("Branch listing completed successfully")
+}
+
+func cmdTest(args []string) {
+	debugLog("Starting test command")
+
+	testFlag := flag.NewFlagSet("test", flag.ExitOnError)
+	verbose := testFlag.Bool("v", false, "Verbose output")
+	race := testFlag.Bool("race", false, "Enable race detector")
+	cover := testFlag.Bool("cover", false, "Enable coverage")
+	testFlag.Parse(args[1:])
+
+	debugLog("Verbose: %v", *verbose)
+	debugLog("Race: %v", *race)
+	debugLog("Cover: %v", *cover)
+
+	fmt.Println("Running tests...")
+
+	cmdArgs := []string{"test", "./..."}
+	if *verbose {
+		cmdArgs = append(cmdArgs, "-v")
+	}
+	if *race {
+		cmdArgs = append(cmdArgs, "-race")
+	}
+	if *cover {
+		cmdArgs = append(cmdArgs, "-cover")
+	}
+
+	debugLog("Executing: go %s", strings.Join(cmdArgs, " "))
+
+	cmd := exec.Command("go", cmdArgs...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	if err != nil {
+		debugLog("Test failed: %v", err)
+		fmt.Printf("\nTests failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	debugLog("Tests completed successfully")
+	fmt.Println("\nAll tests passed!")
 }
