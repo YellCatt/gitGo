@@ -218,6 +218,10 @@ func cmdClone(args []string) {
 		debugLog("Setting branch reference: %s", *branch)
 		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(*branch)
 		cloneOpts.SingleBranch = true
+	} else {
+		debugLog("No branch specified, trying main then master")
+		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName("main")
+		cloneOpts.SingleBranch = true
 	}
 	
 	if *depth > 0 {
@@ -225,10 +229,43 @@ func cmdClone(args []string) {
 		cloneOpts.Depth = *depth
 	}
 	
-	debugLog("Calling PlainClone...")
+	debugLog("Calling PlainClone with branch: %s", cloneOpts.ReferenceName)
 	_, err = git.PlainClone(path, false, cloneOpts)
+	
+	if err != nil && *branch == "" {
+		debugLog("Clone failed with main branch, trying master")
+		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName("master")
+		_, err = git.PlainClone(path, false, cloneOpts)
+	}
 	if err != nil {
 		debugLog("Clone failed: %v", err)
+		if strings.Contains(err.Error(), "remote repository is empty") {
+			fmt.Println("Remote repository is empty, initializing local repository...")
+			if path == "" {
+				path = "."
+			}
+			_, initErr := git.PlainInit(path, false)
+			if initErr != nil {
+				fmt.Printf("Error initializing local repository: %v\n", initErr)
+				os.Exit(1)
+			}
+			repo, initErr := git.PlainOpen(path)
+			if initErr != nil {
+				fmt.Printf("Error opening local repository: %v\n", initErr)
+				os.Exit(1)
+			}
+			_, initErr = repo.CreateRemote(&config.RemoteConfig{
+				Name: "origin",
+				URLs: []string{url},
+			})
+			if initErr != nil {
+				fmt.Printf("Error adding remote origin: %v\n", initErr)
+				os.Exit(1)
+			}
+			absPath, _ := filepath.Abs(path)
+			fmt.Printf("Initialized empty Git repository in %s with remote origin\n", absPath)
+			return
+		}
 		fmt.Printf("Error cloning repository: %v\n", err)
 		fmt.Println("")
 		fmt.Println("Possible solutions:")
