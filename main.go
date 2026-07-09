@@ -192,11 +192,10 @@ func cmdClone(args []string) {
 	if *insecure && strings.HasPrefix(url, "https://") {
 		debugLog("Insecure mode enabled, skipping SSL verification")
 		cloneOpts.Auth = &githttp.BasicAuth{}
-		http.DefaultClient = &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
+		transport := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
+		githttp.DefaultClient = &http.Client{Transport: transport}
 	}
 
 	if strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://") {
