@@ -97,15 +97,28 @@ func cmdClone() {
 
 	fmt.Printf("Cloning into %s...\n", path)
 	
-	if *force {
-		_, err := os.Stat(path)
-		if err == nil {
-			fmt.Println("Removing existing directory...")
-			err = os.RemoveAll(path)
-			if err != nil {
-				fmt.Printf("Error removing existing directory: %v\n", err)
+	info, err := os.Stat(path)
+	if err == nil {
+		if info.IsDir() {
+			files, _ := os.ReadDir(path)
+			if len(files) == 0 {
+				path = ""
+			} else if *force {
+				fmt.Println("Removing existing directory...")
+				err = os.RemoveAll(path)
+				if err != nil {
+					fmt.Printf("Error removing existing directory: %v\n", err)
+					fmt.Println("Make sure no files in the directory are in use")
+					os.Exit(1)
+				}
+			} else {
+				fmt.Printf("Error: directory '%s' already exists and is not empty\n", path)
+				fmt.Println("Use -f flag to force overwrite")
 				os.Exit(1)
 			}
+		} else {
+			fmt.Printf("Error: '%s' is a file, not a directory\n", path)
+			os.Exit(1)
 		}
 	}
 	
