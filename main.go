@@ -34,6 +34,8 @@ func main() {
 		cmdLog()
 	case "remote":
 		cmdRemote()
+	case "pull":
+		cmdPull()
 	default:
 		fmt.Printf("Unknown command: %s\n", os.Args[1])
 		printUsage()
@@ -46,6 +48,7 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  gitGo init [path]          Initialize a new git repository")
 	fmt.Println("  gitGo clone <url> [path]   Clone a remote repository")
+	fmt.Println("  gitGo pull                 Pull changes from remote")
 	fmt.Println("  gitGo status               Show working tree status")
 	fmt.Println("  gitGo add [files...]       Add files to staging area")
 	fmt.Println("  gitGo commit -m <message>  Commit changes")
@@ -72,11 +75,12 @@ func cmdClone() {
 	cloneFlag := flag.NewFlagSet("clone", flag.ExitOnError)
 	branch := cloneFlag.String("b", "", "Branch to checkout")
 	depth := cloneFlag.Int("depth", 0, "Create a shallow clone with a history truncated to the specified number of commits")
+	force := cloneFlag.Bool("f", false, "Force overwrite existing directory")
 	cloneFlag.Parse(os.Args[2:])
 
 	args := cloneFlag.Args()
 	if len(args) < 1 {
-		fmt.Println("Usage: gitGo clone [-b branch] [--depth depth] <url> [path]")
+		fmt.Println("Usage: gitGo clone [-b branch] [--depth depth] [-f] <url> [path]")
 		os.Exit(1)
 	}
 
@@ -86,11 +90,24 @@ func cmdClone() {
 		path = args[1]
 	}
 
-	if path == "" {
-		path = "."
+	if path == "" || path == "." {
+		repoName := extractRepoName(url)
+		path = repoName
 	}
 
 	fmt.Printf("Cloning into %s...\n", path)
+	
+	if *force {
+		_, err := os.Stat(path)
+		if err == nil {
+			fmt.Println("Removing existing directory...")
+			err = os.RemoveAll(path)
+			if err != nil {
+				fmt.Printf("Error removing existing directory: %v\n", err)
+				os.Exit(1)
+			}
+		}
+	}
 	
 	cloneOpts := &git.CloneOptions{
 		URL:               url,
@@ -110,10 +127,41 @@ func cmdClone() {
 	_, err := git.PlainClone(path, false, cloneOpts)
 	if err != nil {
 		fmt.Printf("Error cloning repository: %v\n", err)
-		fmt.Println("Try using --depth 1 for shallow clone if repository is large")
+		if *depth == 0 {
+			fmt.Println("Try using --depth 1 for shallow clone if repository is large")
+		}
 		os.Exit(1)
 	}
 	fmt.Println("Clone completed successfully")
+}
+
+func extractRepoName(url string) string {
+	if len(url) == 0 {
+		return "repo"
+	}
+	
+	if idx := len(url) - 1; idx >= 0 && url[idx] == '/' {
+		url = url[:idx]
+	}
+	
+	if idx := len(url) - 1; idx >= 0 && url[idx] == '\\' {
+		url = url[:idx]
+	}
+	
+	for i := len(url) - 1; i >= 0; i-- {
+		if url[i] == '/' || url[i] == '\\' {
+			name := url[i+1:]
+			if len(name) > 4 && name[len(name)-4:] == ".git" {
+				return name[:len(name)-4]
+			}
+			return name
+		}
+	}
+	
+	if len(url) > 4 && url[len(url)-4:] == ".git" {
+		return url[:len(url)-4]
+	}
+	return url
 }
 
 func cmdStatus() {
@@ -141,6 +189,39 @@ func cmdStatus() {
 	}
 
 	fmt.Println(status)
+}
+
+func cmdPull() {
+	repo, err := git.PlainOpen(".")
+	if err != nil {
+		fmt.Printf("Error opening repository: %v\n", err)
+		os.Exit(1)
+	}
+
+	w, err := repo.Worktree()
+	if err != nil {
+		fmt.Printf("Error getting worktree: %v\n", err)
+		os.Exit(1)
+	}
+
+	err = w.Pull(&git.PullOptions{
+		RemoteName:    "origin",
+		ReferenceName: plumbing.NewBranchReferenceName("main"),
+		Progress:      os.Stdout,
+	})
+
+	if err == git.NoErrAlreadyUpToDate {
+		fmt.Println("Already up to date.")
+		return
+	}
+
+	if err != nil {
+		fmt.Printf("Error pulling repository: %v\n", err)
+		fmt.Println("Try checking your remote configuration or network connection")
+		os.Exit(1)
+	}
+
+	fmt.Println("Pull completed successfully")
 }
 
 func cmdAdd() {
