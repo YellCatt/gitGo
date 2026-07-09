@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
@@ -68,22 +69,34 @@ func cmdInit() {
 }
 
 func cmdClone() {
-	if len(os.Args) < 3 {
-		fmt.Println("Usage: gitGo clone <url> [path]")
+	cloneFlag := flag.NewFlagSet("clone", flag.ExitOnError)
+	branch := cloneFlag.String("b", "", "Branch to checkout")
+	cloneFlag.Parse(os.Args[2:])
+
+	args := cloneFlag.Args()
+	if len(args) < 1 {
+		fmt.Println("Usage: gitGo clone [-b branch] <url> [path]")
 		os.Exit(1)
 	}
 
-	url := os.Args[2]
+	url := args[0]
 	path := ""
-	if len(os.Args) > 3 {
-		path = os.Args[3]
+	if len(args) > 1 {
+		path = args[1]
 	}
 
 	fmt.Printf("Cloning into %s...\n", path)
-	_, err := git.PlainClone(path, false, &git.CloneOptions{
+	
+	cloneOpts := &git.CloneOptions{
 		URL:      url,
 		Progress: os.Stdout,
-	})
+	}
+	
+	if *branch != "" {
+		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(*branch)
+	}
+	
+	_, err := git.PlainClone(path, false, cloneOpts)
 	if err != nil {
 		fmt.Printf("Error cloning repository: %v\n", err)
 		os.Exit(1)
