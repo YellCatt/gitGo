@@ -273,6 +273,11 @@ func cmdStatus(args []string) {
 func cmdPull(args []string) {
 	debugLog("Starting pull command")
 	
+	pullFlag := flag.NewFlagSet("pull", flag.ExitOnError)
+	force := pullFlag.Bool("f", false, "Force pull and discard local changes")
+	rebase := pullFlag.Bool("r", false, "Rebase instead of merge")
+	pullFlag.Parse(args[1:])
+	
 	repo, err := git.PlainOpen(".")
 	if err != nil {
 		debugLog("Error opening repository: %v", err)
@@ -289,12 +294,31 @@ func cmdPull(args []string) {
 	}
 	debugLog("Worktree retrieved successfully")
 
+	if *force {
+		debugLog("Force flag set, resetting worktree")
+		err = w.Reset(&git.ResetOptions{
+			Mode: git.HardReset,
+		})
+		if err != nil {
+			debugLog("Error resetting worktree: %v", err)
+			fmt.Printf("Error resetting worktree: %v\n", err)
+			os.Exit(1)
+		}
+		debugLog("Worktree reset successfully")
+	}
+
 	debugLog("Starting pull from origin/main")
-	err = w.Pull(&git.PullOptions{
+	pullOpts := &git.PullOptions{
 		RemoteName:    "origin",
 		ReferenceName: plumbing.NewBranchReferenceName("main"),
 		Progress:      os.Stdout,
-	})
+	}
+	
+	if *rebase {
+		pullOpts.Rebase = true
+	}
+	
+	err = w.Pull(pullOpts)
 
 	if err == git.NoErrAlreadyUpToDate {
 		debugLog("Already up to date")
@@ -305,7 +329,12 @@ func cmdPull(args []string) {
 	if err != nil {
 		debugLog("Error pulling: %v", err)
 		fmt.Printf("Error pulling repository: %v\n", err)
-		fmt.Println("Try checking your remote configuration or network connection")
+		fmt.Println("")
+		fmt.Println("Possible solutions:")
+		fmt.Println("1. Commit or stash your changes before pulling")
+		fmt.Println("2. Use -f flag to discard local changes and force pull")
+		fmt.Println("3. Check your remote configuration")
+		fmt.Println("4. Check your network connection")
 		os.Exit(1)
 	}
 
