@@ -71,11 +71,12 @@ func cmdInit() {
 func cmdClone() {
 	cloneFlag := flag.NewFlagSet("clone", flag.ExitOnError)
 	branch := cloneFlag.String("b", "", "Branch to checkout")
+	depth := cloneFlag.Int("depth", 0, "Create a shallow clone with a history truncated to the specified number of commits")
 	cloneFlag.Parse(os.Args[2:])
 
 	args := cloneFlag.Args()
 	if len(args) < 1 {
-		fmt.Println("Usage: gitGo clone [-b branch] <url> [path]")
+		fmt.Println("Usage: gitGo clone [-b branch] [--depth depth] <url> [path]")
 		os.Exit(1)
 	}
 
@@ -85,20 +86,31 @@ func cmdClone() {
 		path = args[1]
 	}
 
+	if path == "" {
+		path = "."
+	}
+
 	fmt.Printf("Cloning into %s...\n", path)
 	
 	cloneOpts := &git.CloneOptions{
-		URL:      url,
-		Progress: os.Stdout,
+		URL:               url,
+		Progress:          os.Stdout,
+		SingleBranch:      true,
+		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth,
 	}
 	
 	if *branch != "" {
 		cloneOpts.ReferenceName = plumbing.NewBranchReferenceName(*branch)
 	}
 	
+	if *depth > 0 {
+		cloneOpts.Depth = *depth
+	}
+	
 	_, err := git.PlainClone(path, false, cloneOpts)
 	if err != nil {
 		fmt.Printf("Error cloning repository: %v\n", err)
+		fmt.Println("Try using --depth 1 for shallow clone if repository is large")
 		os.Exit(1)
 	}
 	fmt.Println("Clone completed successfully")
