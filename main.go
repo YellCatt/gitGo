@@ -137,7 +137,7 @@ func cmdClone() {
 		cloneOpts.Depth = *depth
 	}
 	
-	_, err := git.PlainClone(path, false, cloneOpts)
+	_, err = git.PlainClone(path, false, cloneOpts)
 	if err != nil {
 		fmt.Printf("Error cloning repository: %v\n", err)
 		if *depth == 0 {
