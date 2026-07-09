@@ -65,6 +65,8 @@ func main() {
 		cmdCheckout(args)
 	case "branch":
 		cmdBranch(args)
+	case "push":
+		cmdPush(args)
 	case "test":
 		cmdTest(args)
 	default:
@@ -85,6 +87,7 @@ func printUsage() {
 	fmt.Println("  gitGo status               Show working tree status")
 	fmt.Println("  gitGo add [files...]       Add files to staging area")
 	fmt.Println("  gitGo commit -m <message>  Commit changes")
+	fmt.Println("  gitGo push                 Push changes to remote")
 	fmt.Println("  gitGo log                  Show commit history")
 	fmt.Println("  gitGo test                 Run Go tests")
 	fmt.Println("  gitGo remote add <name> <url>  Add remote repository")
@@ -650,6 +653,98 @@ func cmdBranch(args []string) {
 		os.Exit(1)
 	}
 	debugLog("Branch listing completed successfully")
+}
+
+func cmdPush(args []string) {
+	debugLog("Starting push command")
+
+	pushFlag := flag.NewFlagSet("push", flag.ExitOnError)
+	sshKey := pushFlag.String("ssh-key", "", "Path to SSH private key (default: ~/.ssh/id_rsa)")
+	pushFlag.Parse(args[1:])
+
+	repo, err := git.PlainOpen(".")
+	if err != nil {
+		debugLog("Error opening repository: %v", err)
+		fmt.Printf("Error opening repository: %v\n", err)
+		os.Exit(1)
+	}
+	debugLog("Repository opened successfully")
+
+	remote, err := repo.Remote("origin")
+	if err != nil {
+		debugLog("Error getting remote origin: %v", err)
+		fmt.Printf("Error: Remote 'origin' not found\n")
+		fmt.Println("Use 'gitGo remote add origin <url>' to add a remote")
+		os.Exit(1)
+	}
+	debugLog("Remote origin found")
+
+	remoteConfig, err := remote.Config()
+	if err != nil {
+		debugLog("Error getting remote config: %v", err)
+		fmt.Printf("Error getting remote config: %v\n", err)
+		os.Exit(1)
+	}
+
+	var auth git.AuthMethod
+	url := remoteConfig.URLs[0]
+	if strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://") {
+		debugLog("Detected SSH URL, setting up authentication")
+		keyPath := *sshKey
+		if keyPath == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				fmt.Printf("Error getting home directory: %v\n", err)
+				os.Exit(1)
+			}
+			keyPath = filepath.Join(home, ".ssh", "id_rsa")
+			debugLog("Using default SSH key path: %s", keyPath)
+		}
+
+		_, err := os.Stat(keyPath)
+		if err != nil {
+			fmt.Printf("Error: SSH key not found at %s\n", keyPath)
+			fmt.Println("Please provide SSH key path with --ssh-key flag")
+			os.Exit(1)
+		}
+
+		publicKeys, err := ssh.NewPublicKeysFromFile("git", keyPath, "")
+		if err != nil {
+			debugLog("Error creating SSH public keys: %v", err)
+			fmt.Printf("Error loading SSH key: %v\n", err)
+			os.Exit(1)
+		}
+		auth = publicKeys
+	}
+
+	debugLog("Pushing to remote: %s", url)
+	err = repo.Push(&git.PushOptions{
+		RemoteName: "origin",
+		Auth:       auth,
+		Progress:   os.Stdout,
+	})
+
+	if err == nil {
+		debugLog("Push completed successfully")
+		fmt.Println("Push completed successfully")
+		return
+	}
+
+	if err == git.NoErrAlreadyUpToDate {
+		debugLog("Already up to date")
+		fmt.Println("Everything up-to-date")
+		return
+	}
+
+	debugLog("Error pushing: %v", err)
+	fmt.Printf("Error pushing: %v\n", err)
+	fmt.Println("")
+	fmt.Println("Possible solutions:")
+	fmt.Println("1. Check if you have write access to the remote repository")
+	fmt.Println("2. Make sure your SSH key is correctly configured")
+	fmt.Println("3. For HTTPS URLs, ensure credentials are properly set up")
+	fmt.Println("4. Check your network connection")
+	os.Exit(1)
 }
 
 func cmdTest(args []string) {
