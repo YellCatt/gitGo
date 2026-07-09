@@ -275,7 +275,6 @@ func cmdPull(args []string) {
 	
 	pullFlag := flag.NewFlagSet("pull", flag.ExitOnError)
 	force := pullFlag.Bool("f", false, "Force pull and discard local changes")
-	rebase := pullFlag.Bool("r", false, "Rebase instead of merge")
 	pullFlag.Parse(args[1:])
 	
 	repo, err := git.PlainOpen(".")
@@ -308,17 +307,11 @@ func cmdPull(args []string) {
 	}
 
 	debugLog("Starting pull from origin/main")
-	pullOpts := &git.PullOptions{
+	err = w.Pull(&git.PullOptions{
 		RemoteName:    "origin",
 		ReferenceName: plumbing.NewBranchReferenceName("main"),
 		Progress:      os.Stdout,
-	}
-	
-	if *rebase {
-		pullOpts.Rebase = true
-	}
-	
-	err = w.Pull(pullOpts)
+	})
 
 	if err == git.NoErrAlreadyUpToDate {
 		debugLog("Already up to date")
