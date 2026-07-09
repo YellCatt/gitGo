@@ -679,15 +679,11 @@ func cmdPush(args []string) {
 	}
 	debugLog("Remote origin found")
 
-	remoteConfig, err := remote.Config()
-	if err != nil {
-		debugLog("Error getting remote config: %v", err)
-		fmt.Printf("Error getting remote config: %v\n", err)
-		os.Exit(1)
-	}
-
-	var auth git.AuthMethod
+	remoteConfig := remote.Config()
 	url := remoteConfig.URLs[0]
+	debugLog("Remote URL: %s", url)
+
+	var publicKeys ssh.AuthMethod
 	if strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://") {
 		debugLog("Detected SSH URL, setting up authentication")
 		keyPath := *sshKey
@@ -708,21 +704,24 @@ func cmdPush(args []string) {
 			os.Exit(1)
 		}
 
-		publicKeys, err := ssh.NewPublicKeysFromFile("git", keyPath, "")
+		publicKeys, err = ssh.NewPublicKeysFromFile("git", keyPath, "")
 		if err != nil {
 			debugLog("Error creating SSH public keys: %v", err)
 			fmt.Printf("Error loading SSH key: %v\n", err)
 			os.Exit(1)
 		}
-		auth = publicKeys
 	}
 
 	debugLog("Pushing to remote: %s", url)
-	err = repo.Push(&git.PushOptions{
+	pushOpts := &git.PushOptions{
 		RemoteName: "origin",
-		Auth:       auth,
 		Progress:   os.Stdout,
-	})
+	}
+	if publicKeys != nil {
+		pushOpts.Auth = publicKeys
+	}
+
+	err = repo.Push(pushOpts)
 
 	if err == nil {
 		debugLog("Push completed successfully")
