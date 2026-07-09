@@ -63,7 +63,8 @@ func cmdInit() {
 		fmt.Printf("Error initializing repository: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Initialized empty Git repository in %s\n", filepath.Abs(path))
+	absPath, _ := filepath.Abs(path)
+	fmt.Printf("Initialized empty Git repository in %s\n", absPath)
 }
 
 func cmdClone() {
@@ -238,7 +239,7 @@ func cmdRemote() {
 			os.Exit(1)
 		}
 
-		err = repo.CreateRemote(&config.RemoteConfig{
+		_, err = repo.CreateRemote(&config.RemoteConfig{
 			Name: name,
 			URLs: []string{url},
 		})
