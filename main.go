@@ -233,7 +233,8 @@ func extractRepoName(url string) string {
 
 func cmdStatus(args []string) {
 	debugLog("Starting status command")
-	debugLog("Current directory: %s", os.Getwd())
+	wd, _ := os.Getwd()
+	debugLog("Current directory: %s", wd)
 	
 	repo, err := git.PlainOpen(".")
 	if err != nil {
