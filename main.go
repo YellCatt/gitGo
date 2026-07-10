@@ -190,12 +190,7 @@ func cmdClone(args []string) {
 
 	if strings.HasPrefix(url, "https://") {
 		debugLog("Skipping SSL verification by default")
-		customClient := &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
-		}
-		git.NewClient().InstallProtocol("https", githttp.NewClient(customClient))
+		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
 	if strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://") {
