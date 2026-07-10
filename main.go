@@ -195,7 +195,7 @@ func cmdClone(args []string) {
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			},
 		}
-		client.InstallProtocol("https", githttp.NewClient(customClient))
+		git.DefaultClient.InstallProtocol("https", githttp.NewClient(customClient))
 	}
 
 	if strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://") {
