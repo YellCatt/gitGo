@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
 
@@ -704,6 +705,8 @@ func cmdPush(args []string) {
 
 	pushFlag := flag.NewFlagSet("push", flag.ExitOnError)
 	sshKey := pushFlag.String("ssh-key", "", "Path to SSH private key (default: ~/.ssh/id_rsa)")
+	username := pushFlag.String("u", "", "Username for HTTPS authentication")
+	password := pushFlag.String("p", "", "Password or token for HTTPS authentication")
 	pushFlag.Parse(args[1:])
 
 	repo, err := git.PlainOpen(".")
@@ -727,7 +730,7 @@ func cmdPush(args []string) {
 	url := remoteConfig.URLs[0]
 	debugLog("Remote URL: %s", url)
 
-	var publicKeys ssh.AuthMethod
+	var auth git.AuthMethod
 	if strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://") {
 		debugLog("Detected SSH URL, setting up authentication")
 		keyPath := *sshKey
@@ -748,11 +751,23 @@ func cmdPush(args []string) {
 			os.Exit(1)
 		}
 
-		publicKeys, err = ssh.NewPublicKeysFromFile("git", keyPath, "")
+		publicKeys, err := ssh.NewPublicKeysFromFile("git", keyPath, "")
 		if err != nil {
 			debugLog("Error creating SSH public keys: %v", err)
 			fmt.Printf("Error loading SSH key: %v\n", err)
 			os.Exit(1)
+		}
+		auth = publicKeys
+	} else if strings.HasPrefix(url, "https://") {
+		debugLog("Detected HTTPS URL, setting up authentication")
+		if *username != "" || *password != "" {
+			auth = &githttp.BasicAuth{
+				Username: *username,
+				Password: *password,
+			}
+			debugLog("Using HTTPS basic authentication")
+		} else {
+			debugLog("No HTTPS credentials provided, will try without auth")
 		}
 	}
 
@@ -760,9 +775,7 @@ func cmdPush(args []string) {
 	pushOpts := &git.PushOptions{
 		RemoteName: "origin",
 		Progress:   os.Stdout,
-	}
-	if publicKeys != nil {
-		pushOpts.Auth = publicKeys
+		Auth:       auth,
 	}
 
 	err = repo.Push(pushOpts)
