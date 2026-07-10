@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
@@ -730,7 +731,7 @@ func cmdPush(args []string) {
 	url := remoteConfig.URLs[0]
 	debugLog("Remote URL: %s", url)
 
-	var auth interface{}
+	var auth transport.AuthMethod
 	if strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://") {
 		debugLog("Detected SSH URL, setting up authentication")
 		keyPath := *sshKey
