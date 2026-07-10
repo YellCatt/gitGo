@@ -122,12 +122,11 @@ func cmdClone(args []string) {
 	depth := cloneFlag.Int("depth", 0, "Create a shallow clone with a history truncated to the specified number of commits")
 	force := cloneFlag.Bool("f", false, "Force overwrite existing directory")
 	sshKey := cloneFlag.String("ssh-key", "", "Path to SSH private key (default: ~/.ssh/id_rsa)")
-	insecure := cloneFlag.Bool("k", false, "Skip SSL certificate verification (insecure)")
 	cloneFlag.Parse(args[1:])
 
 	flagArgs := cloneFlag.Args()
 	if len(flagArgs) < 1 {
-		fmt.Println("Usage: gitGo clone [-b branch] [--depth depth] [-f] [-k] [--ssh-key path] <url> [path]")
+		fmt.Println("Usage: gitGo clone [-b branch] [--depth depth] [-f] [--ssh-key path] <url> [path]")
 		os.Exit(1)
 	}
 
@@ -189,8 +188,8 @@ func cmdClone(args []string) {
 		RecurseSubmodules: git.DefaultSubmoduleRecursionDepth,
 	}
 
-	if *insecure && strings.HasPrefix(url, "https://") {
-		debugLog("Insecure mode enabled, skipping SSL verification")
+	if strings.HasPrefix(url, "https://") {
+		debugLog("Skipping SSL verification by default")
 		customClient := &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
