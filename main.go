@@ -730,7 +730,7 @@ func cmdPush(args []string) {
 	url := remoteConfig.URLs[0]
 	debugLog("Remote URL: %s", url)
 
-	var auth git.AuthMethod
+	var auth interface{}
 	if strings.HasPrefix(url, "git@") || strings.HasPrefix(url, "ssh://") {
 		debugLog("Detected SSH URL, setting up authentication")
 		keyPath := *sshKey
